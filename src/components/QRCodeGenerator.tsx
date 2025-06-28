@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { QrCode, Download, Copy, Check, Share2, Eye, Settings } from 'lucide-react';
 import { CustomerService } from '../services/customerService';
+import { supabase } from '../lib/supabase';
 
 interface QRCodeGeneratorProps {
   restaurantId?: string;
@@ -151,7 +152,7 @@ const QRCodeGenerator: React.FC<QRCodeGeneratorProps> = ({ restaurantId }) => {
           <li>• Display this QR code at your restaurant</li>
           <li>• Customers scan to join your loyalty program</li>
           <li>• They earn points automatically with purchases</li>
-          <li>• Track all activity in your dashboard</li>
+          <li>• Track all activity in this dashboard</li>
         </ul>
       </div>
     </div>
