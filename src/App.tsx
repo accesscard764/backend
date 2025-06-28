@@ -7,6 +7,7 @@ import DashboardLayout from './components/DashboardLayout';
 import DashboardHome from './components/DashboardHome';
 import CustomersPage from './components/CustomersPage';
 import CustomerWallet from './components/CustomerWallet';
+import QRCodePage from './components/QRCodePage';
 
 function App() {
   return (
@@ -27,8 +28,8 @@ function App() {
           }>
             <Route index element={<DashboardHome />} />
             <Route path="customers" element={<CustomersPage />} />
+            <Route path="qr" element={<QRCodePage />} />
             <Route path="rewards" element={<div className="p-6"><h1 className="text-2xl font-bold">Rewards</h1><p>Reward management coming soon...</p></div>} />
-            <Route path="qr" element={<div className="p-6"><h1 className="text-2xl font-bold">QR Codes</h1><p>QR code management coming soon...</p></div>} />
             <Route path="staff" element={<div className="p-6"><h1 className="text-2xl font-bold">Staff</h1><p>Staff management coming soon...</p></div>} />
             <Route path="analytics" element={<div className="p-6"><h1 className="text-2xl font-bold">Analytics</h1><p>Advanced analytics coming soon...</p></div>} />
             <Route path="billing" element={<div className="p-6"><h1 className="text-2xl font-bold">Billing</h1><p>Billing management coming soon...</p></div>} />
