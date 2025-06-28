@@ -137,7 +137,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           if (emailError) {
             console.error('❌ Error fetching staff by email:', emailError);
-            setStaff(null);
+            
+            // If no staff record exists, this is a new user - create restaurant and staff
+            console.log('🏢 No staff record found, creating new restaurant for user');
+            await createRestaurantAndStaff(user);
+            
+            // Fetch the newly created staff record
+            const { data: newStaffData, error: newStaffError } = await supabase
+              .from('staff')
+              .select('*')
+              .eq('user_id', user.id)
+              .single();
+
+            if (newStaffError) {
+              console.error('❌ Error fetching newly created staff:', newStaffError);
+              setStaff(null);
+              return;
+            }
+
+            console.log('✅ New staff record created and loaded');
+            setStaff(newStaffData);
             return;
           }
 
@@ -192,6 +211,158 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const createRestaurantAndStaff = async (user: User) => {
+    try {
+      console.log('🏢 Creating restaurant and staff for new user:', user.email);
+
+      // Extract name from email or use provided data
+      const emailName = user.email?.split('@')[0] || 'Restaurant';
+      const firstName = user.user_metadata?.firstName || emailName;
+      const lastName = user.user_metadata?.lastName || 'Owner';
+      const restaurantName = user.user_metadata?.restaurantName || `${firstName}'s Restaurant`;
+
+      // Create restaurant
+      const { data: restaurant, error: restaurantError } = await supabase
+        .from('restaurants')
+        .insert({
+          name: restaurantName,
+          email: user.email,
+          subscription_plan: 'basic',
+          settings: {
+            currency: 'USD',
+            timezone: 'America/New_York',
+            points_per_dollar: 1,
+            welcome_bonus: 100,
+            referral_bonus: 200
+          }
+        })
+        .select()
+        .single();
+
+      if (restaurantError) {
+        console.error('❌ Error creating restaurant:', restaurantError);
+        throw new Error(`Failed to create restaurant: ${restaurantError.message}`);
+      }
+
+      console.log('✅ Restaurant created:', restaurant.id);
+
+      // Create default loyalty tiers
+      const { error: tiersError } = await supabase
+        .from('loyalty_tiers')
+        .insert([
+          {
+            restaurant_id: restaurant.id,
+            tier: 'bronze',
+            name: 'Bronze Member',
+            min_points: 0,
+            benefits: ['5% discount', 'Birthday reward'],
+            color: '#CD7F32'
+          },
+          {
+            restaurant_id: restaurant.id,
+            tier: 'silver',
+            name: 'Silver Member',
+            min_points: 500,
+            benefits: ['10% discount', 'Free appetizer monthly', 'Priority support'],
+            color: '#C0C0C0'
+          },
+          {
+            restaurant_id: restaurant.id,
+            tier: 'gold',
+            name: 'Gold Member',
+            min_points: 1000,
+            benefits: ['15% discount', 'Free dessert weekly', 'VIP access', 'Premium support'],
+            color: '#FFD700'
+          }
+        ]);
+
+      if (tiersError) {
+        console.error('❌ Error creating loyalty tiers:', tiersError);
+      }
+
+      // Create default rewards
+      const { error: rewardsError } = await supabase
+        .from('rewards')
+        .insert([
+          {
+            restaurant_id: restaurant.id,
+            name: 'Free Appetizer',
+            description: 'Complimentary appetizer of your choice',
+            points_required: 200,
+            category: 'food',
+            min_tier: 'bronze'
+          },
+          {
+            restaurant_id: restaurant.id,
+            name: 'Free Dessert',
+            description: 'Complimentary dessert with any main course',
+            points_required: 300,
+            category: 'food',
+            min_tier: 'silver'
+          },
+          {
+            restaurant_id: restaurant.id,
+            name: 'VIP Dining Experience',
+            description: 'Priority seating and complimentary wine pairing',
+            points_required: 1000,
+            category: 'experience',
+            min_tier: 'gold'
+          }
+        ]);
+
+      if (rewardsError) {
+        console.error('❌ Error creating default rewards:', rewardsError);
+      }
+
+      // Create staff record
+      const { data: staffRecord, error: staffError } = await supabase
+        .from('staff')
+        .insert({
+          restaurant_id: restaurant.id,
+          user_id: user.id,
+          email: user.email,
+          first_name: firstName,
+          last_name: lastName,
+          role: 'manager',
+          permissions: [
+            'manage_customers',
+            'manage_rewards',
+            'view_analytics',
+            'manage_staff',
+            'manage_settings',
+            'export_data',
+            'manage_billing'
+          ],
+          is_active: true,
+          last_login: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (staffError) {
+        console.error('❌ Error creating staff record:', staffError);
+        throw new Error(`Failed to create staff record: ${staffError.message}`);
+      }
+
+      console.log('✅ Staff record created:', staffRecord.id);
+
+      // Create welcome notification
+      await supabase
+        .from('notifications')
+        .insert({
+          restaurant_id: restaurant.id,
+          title: 'Welcome to Your Restaurant Dashboard!',
+          message: 'Your loyalty program is now set up and ready to use. Start by sharing your QR code with customers!',
+          type: 'success'
+        });
+
+      return staffRecord;
+    } catch (error) {
+      console.error('❌ Error in createRestaurantAndStaff:', error);
+      throw error;
+    }
+  };
+
   const signIn = async (email: string, password: string) => {
     try {
       console.log('🔐 Attempting sign in for:', email);
@@ -238,10 +409,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (data.user) {
         console.log('✅ Sign up successful for:', data.user.email);
-        
-        // Note: Restaurant creation is now handled manually by admin
-        // Users just sign up and get linked to existing staff records
-        console.log('ℹ️ User created - will be linked to existing staff record if available');
+        console.log('ℹ️ Restaurant and staff will be created automatically on first sign in');
       }
 
       return {};
