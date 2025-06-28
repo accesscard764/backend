@@ -37,7 +37,7 @@ export class DashboardService {
 
       console.log('✅ Database connection successful');
 
-      // First try to find by user_id
+      // Try to find by user_id first
       const { data: staff, error } = await supabase
         .from('staff')
         .select('restaurant_id, first_name, last_name, role')
@@ -46,39 +46,7 @@ export class DashboardService {
 
       if (error) {
         console.error('❌ Error fetching staff by user_id:', error);
-        
-        // Try to find staff by email if user_id lookup fails
-        if (user.email) {
-          const { data: staffByEmail, error: emailError } = await supabase
-            .from('staff')
-            .select('restaurant_id, first_name, last_name, role')
-            .eq('email', user.email)
-            .maybeSingle();
-
-          if (emailError) {
-            console.error('❌ Error fetching staff by email:', emailError);
-            throw new Error(`Staff lookup failed: ${emailError.message}`);
-          }
-
-          if (staffByEmail) {
-            console.log('✅ Found staff by email, updating user_id');
-            
-            // Update the staff record with the user_id
-            const { error: updateError } = await supabase
-              .from('staff')
-              .update({ user_id: user.id })
-              .eq('email', user.email);
-
-            if (updateError) {
-              console.error('❌ Error updating staff user_id:', updateError);
-            }
-            
-            console.log('✅ Restaurant ID found:', staffByEmail.restaurant_id);
-            return staffByEmail.restaurant_id;
-          }
-        }
-        
-        throw new Error('No staff record found for user');
+        throw new Error(`Staff lookup failed: ${error.message}`);
       }
 
       if (staff) {
@@ -87,7 +55,9 @@ export class DashboardService {
         return staff.restaurant_id;
       }
 
-      throw new Error('No staff record found');
+      // If no staff record found, this means the user doesn't have a restaurant setup
+      console.log('❌ No staff record found for user');
+      throw new Error('No staff record found for user');
     } catch (error) {
       console.error('❌ Error getting restaurant ID:', error);
       throw error;
@@ -500,40 +470,7 @@ export class DashboardService {
         .maybeSingle();
 
       if (error || !staff) {
-        console.log('🔍 Staff not found by user_id, trying email');
-        
-        if (user.email) {
-          const { data: staffByEmail, error: emailError } = await supabase
-            .from('staff')
-            .select('*')
-            .eq('email', user.email)
-            .maybeSingle();
-
-          if (emailError) {
-            console.error('❌ Error fetching staff by email:', emailError);
-            throw new Error(`Failed to fetch staff: ${emailError.message}`);
-          }
-
-          if (staffByEmail) {
-            console.log('✅ Found staff by email');
-            
-            // Update the staff record with the user_id
-            await supabase
-              .from('staff')
-              .update({ user_id: user.id })
-              .eq('email', user.email);
-            
-            const userData = {
-              name: `${staffByEmail.first_name} ${staffByEmail.last_name}`,
-              role: staffByEmail.role === 'manager' ? 'Restaurant Manager' : 'Staff Member',
-              avatar: `${staffByEmail.first_name[0]}${staffByEmail.last_name[0]}`
-            };
-            
-            console.log('✅ User data found:', userData);
-            return userData;
-          }
-        }
-        
+        console.log('❌ No staff record found for user');
         throw new Error('No staff record found for user');
       }
 

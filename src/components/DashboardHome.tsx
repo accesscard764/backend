@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { 
   Users, TrendingUp, Gift, DollarSign, ArrowUpRight, ArrowDownRight,
-  Filter, Download, Eye, MoreVertical, RefreshCw, AlertCircle
+  Filter, Download, Eye, MoreVertical, RefreshCw, AlertCircle, UserPlus
 } from 'lucide-react';
 import { 
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, 
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import { useDashboardData } from '../hooks/useDashboardData';
+import QRCodeGenerator from './QRCodeGenerator';
 
 const DashboardHome = () => {
   const [timeRange, setTimeRange] = useState('7d');
@@ -101,6 +102,9 @@ const DashboardHome = () => {
     );
   }
 
+  // Check if this is a new restaurant with no data
+  const isNewRestaurant = stats.every(stat => stat.value === '0' || stat.value === '$0');
+
   return (
     <div className="animate-fade-in space-y-6">
       {/* Time Range Selector */}
@@ -162,8 +166,47 @@ const DashboardHome = () => {
         })}
       </div>
 
-      {/* Enhanced Charts Grid */}
-      {customerData.length > 0 && (
+      {/* New Restaurant Welcome Section */}
+      {isNewRestaurant && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-8 border border-blue-200">
+          <div className="text-center max-w-2xl mx-auto">
+            <div className="w-16 h-16 bg-gradient-to-br from-[#1E2A78] to-[#3B4B9A] rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <UserPlus className="h-8 w-8 text-white" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome to Your Loyalty Program!</h2>
+            <p className="text-gray-600 mb-6">
+              Your restaurant dashboard is ready. Start by setting up your QR code for customers to join your loyalty program.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <QRCodeGenerator />
+              <div className="bg-white rounded-xl p-6 border border-gray-200">
+                <h3 className="font-semibold text-gray-900 mb-4">Quick Start Guide</h3>
+                <ul className="text-sm text-gray-600 space-y-2 text-left">
+                  <li className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-[#1E2A78] rounded-full"></div>
+                    Display your QR code at your restaurant
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-[#1E2A78] rounded-full"></div>
+                    Customers scan to join your program
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-[#1E2A78] rounded-full"></div>
+                    They earn points with every purchase
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-[#1E2A78] rounded-full"></div>
+                    Track everything in this dashboard
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Enhanced Charts Grid - Only show if there's data */}
+      {!isNewRestaurant && customerData.length > 0 && (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* Customer Growth Chart */}
           <div className="xl:col-span-2 bg-white rounded-2xl p-6 border border-gray-200 hover:shadow-lg transition-all duration-300">
@@ -273,8 +316,8 @@ const DashboardHome = () => {
         </div>
       )}
 
-      {/* Weekly Activity Chart */}
-      {weeklyActivity.length > 0 && (
+      {/* Weekly Activity Chart - Only show if there's data */}
+      {!isNewRestaurant && weeklyActivity.length > 0 && (
         <div className="bg-white rounded-2xl p-6 border border-gray-200 hover:shadow-lg transition-all duration-300">
           <div className="flex items-center justify-between mb-6">
             <div>
@@ -328,8 +371,8 @@ const DashboardHome = () => {
         </div>
       )}
 
-      {/* Enhanced Recent Activity */}
-      {recentActivity.length > 0 && (
+      {/* Enhanced Recent Activity - Only show if there's data */}
+      {!isNewRestaurant && recentActivity.length > 0 && (
         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-300">
           <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
             <div className="flex items-center justify-between">
@@ -391,7 +434,7 @@ const DashboardHome = () => {
       )}
 
       {/* No Data States */}
-      {recentActivity.length === 0 && !loading && !error && (
+      {recentActivity.length === 0 && !loading && !error && !isNewRestaurant && (
         <div className="bg-white rounded-2xl p-12 border border-gray-200 text-center">
           <Users className="h-16 w-16 text-gray-300 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-gray-900 mb-2">No Recent Activity</h3>
