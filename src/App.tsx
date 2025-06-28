@@ -6,6 +6,7 @@ import LoginPage from './components/LoginPage';
 import DashboardLayout from './components/DashboardLayout';
 import DashboardHome from './components/DashboardHome';
 import CustomersPage from './components/CustomersPage';
+import CustomerWallet from './components/CustomerWallet';
 
 function App() {
   return (
@@ -14,6 +15,11 @@ function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          
+          {/* Customer Wallet Route - Public access with restaurant linking */}
+          <Route path="/wallet" element={<CustomerWallet />} />
+          
+          {/* Protected Dashboard Routes */}
           <Route path="/dashboard" element={
             <ProtectedRoute>
               <DashboardLayout />

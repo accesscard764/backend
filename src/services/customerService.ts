@@ -7,10 +7,11 @@ export interface CreateCustomerData {
   email: string;
   phone?: string;
   date_of_birth?: string;
+  restaurant_id?: string; // Add restaurant ID for direct linking
 }
 
 export class CustomerService {
-  // Get current restaurant ID
+  // Get current restaurant ID (for manager dashboard)
   private static async getCurrentRestaurantId(): Promise<string> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('No authenticated user');
@@ -28,16 +29,42 @@ export class CustomerService {
     return staff.restaurant_id;
   }
 
-  // Check if customer already exists by email OR phone for current restaurant only
-  static async checkCustomerExists(email: string, phone?: string): Promise<Customer | null> {
+  // Get restaurant info by ID (for customer onboarding)
+  static async getRestaurantInfo(restaurantId: string): Promise<{ id: string; name: string; logo_url?: string }> {
     try {
-      const restaurantId = await this.getCurrentRestaurantId();
+      const { data: restaurant, error } = await supabase
+        .from('restaurants')
+        .select('id, name, logo_url')
+        .eq('id', restaurantId)
+        .single();
 
-      // Build query conditions for current restaurant only
+      if (error || !restaurant) {
+        throw new Error('Restaurant not found');
+      }
+
+      return restaurant;
+    } catch (error) {
+      console.error('Error fetching restaurant info:', error);
+      throw error;
+    }
+  }
+
+  // Check if customer already exists by email OR phone
+  static async checkCustomerExists(
+    email: string, 
+    phone?: string, 
+    restaurantId?: string
+  ): Promise<Customer | null> {
+    try {
+      // If restaurant ID is provided (from QR code), check within that restaurant
+      // Otherwise, check within current user's restaurant (for manager dashboard)
+      const targetRestaurantId = restaurantId || await this.getCurrentRestaurantId();
+
+      // Build query conditions for specific restaurant
       let query = supabase
         .from('customers')
         .select('*')
-        .eq('restaurant_id', restaurantId)
+        .eq('restaurant_id', targetRestaurantId)
         .eq('is_active', true);
 
       // Check by email OR phone (if both provided)
@@ -62,16 +89,21 @@ export class CustomerService {
     }
   }
 
-  // Find customer by email or phone for login (current restaurant only)
-  static async findCustomerForLogin(emailOrPhone: string): Promise<Customer | null> {
+  // Find customer by email or phone for login
+  static async findCustomerForLogin(
+    emailOrPhone: string, 
+    restaurantId?: string
+  ): Promise<Customer | null> {
     try {
-      const restaurantId = await this.getCurrentRestaurantId();
+      // If restaurant ID is provided (from QR code), search within that restaurant
+      // Otherwise, search within current user's restaurant (for manager dashboard)
+      const targetRestaurantId = restaurantId || await this.getCurrentRestaurantId();
 
-      // Try to find by email first, then by phone for current restaurant only
+      // Try to find by email first, then by phone for specific restaurant
       const { data: customers, error } = await supabase
         .from('customers')
         .select('*')
-        .eq('restaurant_id', restaurantId)
+        .eq('restaurant_id', targetRestaurantId)
         .eq('is_active', true)
         .or(`email.eq.${emailOrPhone},phone.eq.${emailOrPhone}`);
 
@@ -87,22 +119,32 @@ export class CustomerService {
     }
   }
 
-  // Create a new customer for current restaurant
+  // Create a new customer
   static async createCustomer(customerData: CreateCustomerData): Promise<Customer> {
     try {
-      const restaurantId = await this.getCurrentRestaurantId();
+      // Use provided restaurant ID or get current user's restaurant ID
+      const restaurantId = customerData.restaurant_id || await this.getCurrentRestaurantId();
 
-      // Check if customer already exists in current restaurant
-      const existingCustomer = await this.checkCustomerExists(customerData.email, customerData.phone);
+      // Check if customer already exists in the target restaurant
+      const existingCustomer = await this.checkCustomerExists(
+        customerData.email, 
+        customerData.phone, 
+        restaurantId
+      );
+      
       if (existingCustomer) {
-        throw new Error('A customer with this email or phone number already exists in your restaurant');
+        throw new Error('A customer with this email or phone number already exists in this restaurant');
       }
 
       const { data: customer, error } = await supabase
         .from('customers')
         .insert({
           restaurant_id: restaurantId,
-          ...customerData,
+          first_name: customerData.first_name,
+          last_name: customerData.last_name,
+          email: customerData.email,
+          phone: customerData.phone,
+          date_of_birth: customerData.date_of_birth,
           total_points: 100, // Welcome bonus
           lifetime_points: 100,
           current_tier: 'bronze',
@@ -127,15 +169,17 @@ export class CustomerService {
           description: 'Welcome bonus for joining our loyalty program'
         });
 
-      // Create notification for new customer signup
-      await supabase
-        .from('notifications')
-        .insert({
-          restaurant_id: restaurantId,
-          title: 'New Customer Signup',
-          message: `${customer.first_name} ${customer.last_name} has joined your loyalty program`,
-          type: 'success'
-        });
+      // Create notification for new customer signup (only if this is from manager dashboard)
+      if (!customerData.restaurant_id) {
+        await supabase
+          .from('notifications')
+          .insert({
+            restaurant_id: restaurantId,
+            title: 'New Customer Signup',
+            message: `${customer.first_name} ${customer.last_name} has joined your loyalty program`,
+            type: 'success'
+          });
+      }
 
       return customer;
     } catch (error) {
@@ -303,5 +347,17 @@ export class CustomerService {
       console.error('Error searching customers:', error);
       throw error;
     }
+  }
+
+  // Generate QR code URL for restaurant
+  static generateQRCodeURL(restaurantId: string): string {
+    const baseURL = window.location.origin;
+    return `${baseURL}/wallet?restaurant=${restaurantId}`;
+  }
+
+  // Parse restaurant ID from URL
+  static getRestaurantIdFromURL(): string | null {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('restaurant');
   }
 }

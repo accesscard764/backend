@@ -4,13 +4,14 @@ import {
   Gift, Crown, Sparkles, Timer,
   Loader2, TrendingUp, Award, Heart, Utensils,
   Coffee, CreditCard, MapPin, Clock, Zap, AlertCircle,
-  LogIn
+  LogIn, Building
 } from 'lucide-react';
 import { CustomerService } from '../services/customerService';
 import { SMSService } from '../services/smsService';
 
 interface OnboardingProps {
   onComplete: (userData: any) => void;
+  restaurantId?: string; // Add restaurant ID prop for QR code linking
 }
 
 interface FormData {
@@ -35,7 +36,13 @@ interface LoginData {
   error: string;
 }
 
-const OnboardingFlow: React.FC<OnboardingProps> = ({ onComplete }) => {
+interface RestaurantInfo {
+  id: string;
+  name: string;
+  logo_url?: string;
+}
+
+const OnboardingFlow: React.FC<OnboardingProps> = ({ onComplete, restaurantId }) => {
   const [currentStep, setCurrentStep] = useState<'welcome' | 'signup' | 'login' | 'verify' | 'complete'>('welcome');
   const [formData, setFormData] = useState<FormData>({
     firstName: '',
@@ -57,6 +64,23 @@ const OnboardingFlow: React.FC<OnboardingProps> = ({ onComplete }) => {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [existingCustomer, setExistingCustomer] = useState<any>(null);
+  const [restaurantInfo, setRestaurantInfo] = useState<RestaurantInfo | null>(null);
+
+  // Fetch restaurant info if restaurantId is provided
+  useEffect(() => {
+    if (restaurantId) {
+      fetchRestaurantInfo();
+    }
+  }, [restaurantId]);
+
+  const fetchRestaurantInfo = async () => {
+    try {
+      const info = await CustomerService.getRestaurantInfo(restaurantId!);
+      setRestaurantInfo(info);
+    } catch (error) {
+      console.error('Error fetching restaurant info:', error);
+    }
+  };
 
   const handleInputChange = (field: keyof FormData, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -111,7 +135,10 @@ const OnboardingFlow: React.FC<OnboardingProps> = ({ onComplete }) => {
     setLoginData(prev => ({ ...prev, error: '' }));
     
     try {
-      const customer = await CustomerService.findCustomerForLogin(loginData.emailOrPhone);
+      const customer = await CustomerService.findCustomerForLogin(
+        loginData.emailOrPhone, 
+        restaurantId
+      );
       
       if (customer) {
         // Customer found, complete login
@@ -120,12 +147,15 @@ const OnboardingFlow: React.FC<OnboardingProps> = ({ onComplete }) => {
           email: customer.email,
           phone: customer.phone,
           birthDate: customer.date_of_birth,
-          customerId: customer.id
+          customerId: customer.id,
+          restaurantId: customer.restaurant_id
         });
       } else {
         setLoginData(prev => ({ 
           ...prev, 
-          error: 'No account found with this email or phone number. Please sign up instead.' 
+          error: restaurantId 
+            ? 'No account found with this email or phone number at this restaurant. Please sign up instead.'
+            : 'No account found with this email or phone number. Please sign up instead.'
         }));
       }
     } catch (error: any) {
@@ -155,8 +185,12 @@ const OnboardingFlow: React.FC<OnboardingProps> = ({ onComplete }) => {
         return;
       }
 
-      // Check if customer already exists
-      const existing = await CustomerService.checkCustomerExists(formData.email, formData.phone);
+      // Check if customer already exists (with restaurant context if provided)
+      const existing = await CustomerService.checkCustomerExists(
+        formData.email, 
+        formData.phone,
+        restaurantId
+      );
       
       if (existing) {
         setExistingCustomer(existing);
@@ -201,7 +235,8 @@ const OnboardingFlow: React.FC<OnboardingProps> = ({ onComplete }) => {
         email: existingCustomer.email,
         phone: existingCustomer.phone,
         birthDate: existingCustomer.date_of_birth,
-        customerId: existingCustomer.id
+        customerId: existingCustomer.id,
+        restaurantId: existingCustomer.restaurant_id
       });
     }
   };
@@ -235,7 +270,8 @@ const OnboardingFlow: React.FC<OnboardingProps> = ({ onComplete }) => {
         name: `${formData.firstName} ${formData.lastName}`,
         email: formData.email,
         phone: formData.phone,
-        birthDate: formData.birthDate
+        birthDate: formData.birthDate,
+        restaurantId: restaurantId // Pass restaurant ID for customer creation
       });
     } catch (error: any) {
       console.error('Error during verification:', error);
@@ -258,12 +294,38 @@ const OnboardingFlow: React.FC<OnboardingProps> = ({ onComplete }) => {
         {/* Header */}
         <div className="flex-1 flex flex-col justify-center px-6 py-12">
           <div className="max-w-sm mx-auto text-center">
-            <div className="w-20 h-20 mx-auto bg-gradient-to-br from-[#1E2A78] to-[#3B4B9A] rounded-3xl flex items-center justify-center mb-8 shadow-2xl">
-              <ChefHat className="h-10 w-10 text-white" />
-            </div>
-            <h1 className="text-4xl font-light text-gray-900 mb-4 tracking-tight">
-              TableLoyalty
-            </h1>
+            {/* Restaurant branding if available */}
+            {restaurantInfo ? (
+              <div className="mb-8">
+                <div className="w-20 h-20 mx-auto bg-gradient-to-br from-[#1E2A78] to-[#3B4B9A] rounded-3xl flex items-center justify-center mb-4 shadow-2xl">
+                  {restaurantInfo.logo_url ? (
+                    <img 
+                      src={restaurantInfo.logo_url} 
+                      alt={restaurantInfo.name}
+                      className="w-12 h-12 rounded-2xl object-cover"
+                    />
+                  ) : (
+                    <Building className="h-10 w-10 text-white" />
+                  )}
+                </div>
+                <h1 className="text-2xl font-light text-gray-900 mb-2 tracking-tight">
+                  {restaurantInfo.name}
+                </h1>
+                <p className="text-gray-600 text-lg mb-4">
+                  Loyalty Program
+                </p>
+              </div>
+            ) : (
+              <div className="mb-8">
+                <div className="w-20 h-20 mx-auto bg-gradient-to-br from-[#1E2A78] to-[#3B4B9A] rounded-3xl flex items-center justify-center mb-8 shadow-2xl">
+                  <ChefHat className="h-10 w-10 text-white" />
+                </div>
+                <h1 className="text-4xl font-light text-gray-900 mb-4 tracking-tight">
+                  TableLoyalty
+                </h1>
+              </div>
+            )}
+            
             <p className="text-gray-600 text-xl leading-relaxed mb-12">
               Turn every meal into rewards
             </p>
@@ -336,7 +398,7 @@ const OnboardingFlow: React.FC<OnboardingProps> = ({ onComplete }) => {
             </div>
             
             <p className="text-center text-sm text-gray-500">
-              Join thousands earning rewards daily
+              {restaurantInfo ? `Join ${restaurantInfo.name}'s loyalty program` : 'Join thousands earning rewards daily'}
             </p>
           </div>
         </div>
@@ -357,7 +419,9 @@ const OnboardingFlow: React.FC<OnboardingProps> = ({ onComplete }) => {
               <LogIn className="h-8 w-8 text-white" />
             </div>
             <h2 className="text-3xl font-light text-gray-900 mb-2">Welcome Back</h2>
-            <p className="text-gray-600 text-base">Enter your email or phone number</p>
+            <p className="text-gray-600 text-base">
+              {restaurantInfo ? `Sign in to ${restaurantInfo.name}` : 'Enter your email or phone number'}
+            </p>
           </div>
 
           {/* Form */}
@@ -433,7 +497,9 @@ const OnboardingFlow: React.FC<OnboardingProps> = ({ onComplete }) => {
               <ChefHat className="h-8 w-8 text-white" />
             </div>
             <h2 className="text-3xl font-light text-gray-900 mb-2">Create Account</h2>
-            <p className="text-gray-600 text-base">Start earning rewards today</p>
+            <p className="text-gray-600 text-base">
+              {restaurantInfo ? `Join ${restaurantInfo.name}'s loyalty program` : 'Start earning rewards today'}
+            </p>
           </div>
 
           {/* Existing Customer Alert */}
@@ -445,6 +511,7 @@ const OnboardingFlow: React.FC<OnboardingProps> = ({ onComplete }) => {
                   <h3 className="font-medium text-blue-900 mb-1">Welcome back!</h3>
                   <p className="text-blue-700 text-sm mb-3">
                     We found an existing account for {existingCustomer.first_name} {existingCustomer.last_name}
+                    {restaurantInfo && ` at ${restaurantInfo.name}`}
                   </p>
                   <button
                     onClick={handleExistingCustomerLogin}
@@ -549,6 +616,9 @@ const OnboardingFlow: React.FC<OnboardingProps> = ({ onComplete }) => {
                 />
                 <label htmlFor="terms" className="text-sm text-gray-600 leading-relaxed">
                   I agree to the <span className="text-[#1E2A78] font-medium">Terms of Service</span> and <span className="text-[#1E2A78] font-medium">Privacy Policy</span>
+                  {restaurantInfo && (
+                    <span> for {restaurantInfo.name}</span>
+                  )}
                 </label>
               </div>
 

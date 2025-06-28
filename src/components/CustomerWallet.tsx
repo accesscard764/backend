@@ -24,6 +24,7 @@ interface Customer {
   total_spent: number;
   last_visit?: string;
   created_at: string;
+  restaurant_id: string;
 }
 
 interface Reward {
@@ -69,12 +70,34 @@ const CustomerWallet: React.FC<CustomerWalletProps> = ({
   const [redeeming, setRedeeming] = useState<string | null>(null);
   const [showQR, setShowQR] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [restaurantInfo, setRestaurantInfo] = useState<any>(null);
+
+  // Get restaurant ID from URL if available
+  const restaurantIdFromURL = CustomerService.getRestaurantIdFromURL();
 
   useEffect(() => {
     if (customerId && !showOnboarding) {
       fetchCustomerData();
     }
   }, [customerId, showOnboarding]);
+
+  // Fetch restaurant info if we have a restaurant ID from URL
+  useEffect(() => {
+    if (restaurantIdFromURL && !customer) {
+      fetchRestaurantInfo();
+    }
+  }, [restaurantIdFromURL, customer]);
+
+  const fetchRestaurantInfo = async () => {
+    try {
+      if (restaurantIdFromURL) {
+        const info = await CustomerService.getRestaurantInfo(restaurantIdFromURL);
+        setRestaurantInfo(info);
+      }
+    } catch (error) {
+      console.error('Error fetching restaurant info:', error);
+    }
+  };
 
   const fetchCustomerData = async () => {
     if (!customerId) return;
@@ -92,6 +115,12 @@ const CustomerWallet: React.FC<CustomerWalletProps> = ({
       setCustomer(customerData);
       setRewards(rewardsData);
       setTransactions(transactionsData);
+
+      // Fetch restaurant info if we don't have it
+      if (!restaurantInfo && customerData.restaurant_id) {
+        const info = await CustomerService.getRestaurantInfo(customerData.restaurant_id);
+        setRestaurantInfo(info);
+      }
     } catch (err: any) {
       console.error('Error fetching customer data:', err);
       setError(err.message || 'Failed to load customer data');
@@ -112,13 +141,16 @@ const CustomerWallet: React.FC<CustomerWalletProps> = ({
         return;
       }
       
-      // Create new customer
+      // Create new customer with restaurant ID from URL or userData
+      const targetRestaurantId = userData.restaurantId || restaurantIdFromURL;
+      
       const newCustomer = await CustomerService.createCustomer({
         first_name: userData.name.split(' ')[0],
         last_name: userData.name.split(' ').slice(1).join(' '),
         email: userData.email,
         phone: userData.phone,
-        date_of_birth: userData.birthDate && userData.birthDate.trim() !== '' ? userData.birthDate : undefined
+        date_of_birth: userData.birthDate && userData.birthDate.trim() !== '' ? userData.birthDate : undefined,
+        restaurant_id: targetRestaurantId
       });
 
       setCustomer(newCustomer);
@@ -195,7 +227,12 @@ const CustomerWallet: React.FC<CustomerWalletProps> = ({
   };
 
   if (showOnboarding) {
-    return <OnboardingFlow onComplete={handleOnboardingComplete} />;
+    return (
+      <OnboardingFlow 
+        onComplete={handleOnboardingComplete} 
+        restaurantId={restaurantIdFromURL || undefined}
+      />
+    );
   }
 
   if (loading) {
@@ -252,7 +289,9 @@ const CustomerWallet: React.FC<CustomerWalletProps> = ({
               <ChefHat className="h-6 w-6 text-white" />
             </div>
             <div>
-              <h1 className="text-gray-900 font-semibold text-lg">TableLoyalty</h1>
+              <h1 className="text-gray-900 font-semibold text-lg">
+                {restaurantInfo?.name || 'TableLoyalty'}
+              </h1>
               <p className="text-gray-600 text-sm">Loyalty Wallet</p>
             </div>
           </div>
