@@ -117,8 +117,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       console.log('👤 Fetching staff data for:', user.email);
       
+      // Test database connection first
+      const { data: testConnection, error: connectionError } = await supabase
+        .from('staff')
+        .select('restaurant_id')
+        .limit(1);
+
+      if (connectionError) {
+        console.error('❌ Database connection error:', connectionError);
+        setStaff(null);
+        return;
+      }
+
+      console.log('✅ Database connection successful');
+
       // Try to find staff by user_id first
-      let { data: staffData, error } = await supabase
+      const { data: staffData, error } = await supabase
         .from('staff')
         .select('*')
         .eq('user_id', user.id)
@@ -126,83 +140,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (error) {
         console.error('❌ Error fetching staff by user_id:', error);
-        
-        // Try to find by email and link the user_id
-        if (user.email) {
-          const { data: staffByEmail, error: emailError } = await supabase
-            .from('staff')
-            .select('*')
-            .eq('email', user.email)
-            .maybeSingle();
-
-          if (emailError) {
-            console.error('❌ Error fetching staff by email:', emailError);
-            
-            // If no staff record exists, this is a new user - create restaurant and staff
-            console.log('🏢 No staff record found, creating new restaurant for user');
-            await createRestaurantAndStaff(user);
-            
-            // Fetch the newly created staff record
-            const { data: newStaffData, error: newStaffError } = await supabase
-              .from('staff')
-              .select('*')
-              .eq('user_id', user.id)
-              .single();
-
-            if (newStaffError) {
-              console.error('❌ Error fetching newly created staff:', newStaffError);
-              setStaff(null);
-              return;
-            }
-
-            console.log('✅ New staff record created and loaded');
-            setStaff(newStaffData);
-            return;
-          }
-
-          if (staffByEmail && !staffByEmail.user_id) {
-            console.log('🔗 Linking user_id to existing staff record');
-            
-            // Update the staff record with the user_id
-            const { data: updatedStaff, error: updateError } = await supabase
-              .from('staff')
-              .update({ 
-                user_id: user.id,
-                last_login: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-              })
-              .eq('email', user.email)
-              .select()
-              .single();
-
-            if (updateError) {
-              console.error('❌ Error updating staff user_id:', updateError);
-              setStaff(null);
-              return;
-            }
-
-            console.log('✅ Staff record linked and updated');
-            setStaff(updatedStaff);
-            return;
-          }
-
-          if (staffByEmail) {
-            console.log('✅ Staff data found by email');
-            setStaff(staffByEmail);
-            return;
-          }
-        }
-        
-        console.log('❌ No staff record found for user');
         setStaff(null);
         return;
       }
 
+      // If staff record found by user_id, we're done
       if (staffData) {
-        console.log('✅ Staff data loaded:', staffData.first_name, staffData.last_name, staffData.role);
+        console.log('✅ Staff data found by user_id:', staffData.first_name, staffData.last_name, staffData.role);
         setStaff(staffData);
+        return;
+      }
+
+      // No staff record found by user_id, try to find by email
+      console.log('🔍 No staff record found by user_id, trying email lookup...');
+      
+      if (user.email) {
+        const { data: staffByEmail, error: emailError } = await supabase
+          .from('staff')
+          .select('*')
+          .eq('email', user.email)
+          .maybeSingle();
+
+        if (emailError) {
+          console.error('❌ Error fetching staff by email:', emailError);
+          // Continue to create new restaurant and staff
+        } else if (staffByEmail && !staffByEmail.user_id) {
+          console.log('🔗 Linking user_id to existing staff record');
+          
+          // Update the staff record with the user_id
+          const { data: updatedStaff, error: updateError } = await supabase
+            .from('staff')
+            .update({ 
+              user_id: user.id,
+              last_login: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq('email', user.email)
+            .select()
+            .single();
+
+          if (updateError) {
+            console.error('❌ Error updating staff user_id:', updateError);
+            setStaff(null);
+            return;
+          }
+
+          console.log('✅ Staff record linked and updated');
+          setStaff(updatedStaff);
+          return;
+        } else if (staffByEmail) {
+          console.log('✅ Staff data found by email');
+          setStaff(staffByEmail);
+          return;
+        }
+      }
+
+      // No staff record exists, create restaurant and staff for new user
+      console.log('🏢 No staff record found, creating new restaurant for user');
+      const newStaffRecord = await createRestaurantAndStaff(user);
+      
+      if (newStaffRecord) {
+        console.log('✅ New staff record created and loaded');
+        setStaff(newStaffRecord);
       } else {
-        console.log('❌ No staff data found for user');
+        console.log('❌ Failed to create staff record');
         setStaff(null);
       }
     } catch (error) {
@@ -359,7 +360,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return staffRecord;
     } catch (error) {
       console.error('❌ Error in createRestaurantAndStaff:', error);
-      throw error;
+      return null;
     }
   };
 
@@ -374,6 +375,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (error) {
         console.error('❌ Sign in error:', error.message);
+        
+        // Provide more user-friendly error messages
+        if (error.message.includes('Invalid login credentials')) {
+          return { error: 'Invalid email or password. Please check your credentials and try again.' };
+        }
+        if (error.message.includes('Email not confirmed')) {
+          return { error: 'Please check your email and click the verification link before signing in.' };
+        }
+        if (error.message.includes('Too many requests')) {
+          return { error: 'Too many login attempts. Please wait a few minutes before trying again.' };
+        }
+        
         return { error: error.message };
       }
 
@@ -381,7 +394,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return {};
     } catch (error) {
       console.error('❌ Unexpected sign in error:', error);
-      return { error: 'An unexpected error occurred' };
+      return { error: 'An unexpected error occurred. Please try again.' };
     }
   };
 
