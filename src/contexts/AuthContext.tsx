@@ -122,11 +122,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         `${emailDomain.split('.')[0]} Restaurant` : 
         'My Restaurant';
 
+      // The RLS policy requires that the user's email matches the restaurant email
+      // So we use the user's email as the restaurant email to satisfy the policy
       const { data: restaurant, error } = await supabase
         .from('restaurants')
         .insert({
           name: restaurantName,
-          email: userEmail,
+          email: userEmail, // This must match the authenticated user's email for RLS
           settings: {},
           subscription_plan: 'basic',
           is_active: true
@@ -346,8 +348,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // No staff record exists - create one automatically
-      console.log('🆕 No staff record found - creating default setup...');
+      // No staff record exists - check if user can access any existing restaurants first
+      console.log('🔍 Checking for existing restaurants user can access...');
       
       if (!user.email) {
         console.error('❌ User has no email - cannot create staff record');
@@ -357,24 +359,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      // First, check if there's an existing restaurant we can use
-      const { data: existingRestaurants } = await supabase
+      // Check if there's a restaurant with the same email as the user
+      const { data: existingRestaurant, error: restaurantError } = await supabase
         .from('restaurants')
         .select('*')
+        .eq('email', user.email)
         .eq('is_active', true)
-        .limit(1);
+        .maybeSingle();
 
-      let restaurant;
-      if (existingRestaurants && existingRestaurants.length > 0) {
-        restaurant = existingRestaurants[0];
-        console.log('✅ Using existing restaurant:', restaurant.name);
-      } else {
-        // Create a new restaurant
-        restaurant = await createDefaultRestaurant(user.email);
+      if (restaurantError) {
+        console.error('❌ Error checking for existing restaurant:', restaurantError);
+        // Continue with creating new restaurant
+      }
+
+      let restaurant = existingRestaurant;
+
+      if (!restaurant) {
+        console.log('🆕 No matching restaurant found - creating default setup...');
         
-        // Create default loyalty tiers and rewards
-        await createDefaultLoyaltyTiers(restaurant.id);
-        await createDefaultRewards(restaurant.id);
+        try {
+          // Create a new restaurant with the user's email to satisfy RLS policy
+          restaurant = await createDefaultRestaurant(user.email);
+          
+          // Create default loyalty tiers and rewards
+          await createDefaultLoyaltyTiers(restaurant.id);
+          await createDefaultRewards(restaurant.id);
+        } catch (restaurantError) {
+          console.error('❌ Failed to create restaurant:', restaurantError);
+          
+          // If restaurant creation fails, check if there are any restaurants we can use
+          const { data: anyRestaurants } = await supabase
+            .from('restaurants')
+            .select('*')
+            .eq('is_active', true)
+            .limit(1);
+
+          if (anyRestaurants && anyRestaurants.length > 0) {
+            console.log('⚠️ Using fallback restaurant due to creation failure');
+            restaurant = anyRestaurants[0];
+          } else {
+            console.error('❌ No restaurants available and cannot create new one');
+            setStaff(null);
+            setUser(null);
+            await supabase.auth.signOut();
+            return;
+          }
+        }
+      } else {
+        console.log('✅ Using existing restaurant with matching email:', restaurant.name);
       }
 
       // Extract name from email or use defaults
