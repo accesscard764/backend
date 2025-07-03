@@ -112,6 +112,147 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
+  const createDefaultRestaurant = async (userEmail: string) => {
+    try {
+      console.log('🏢 Creating default restaurant for user:', userEmail);
+      
+      // Extract restaurant name from email domain or use default
+      const emailDomain = userEmail.split('@')[1];
+      const restaurantName = emailDomain ? 
+        `${emailDomain.split('.')[0]} Restaurant` : 
+        'My Restaurant';
+
+      const { data: restaurant, error } = await supabase
+        .from('restaurants')
+        .insert({
+          name: restaurantName,
+          email: userEmail,
+          settings: {},
+          subscription_plan: 'basic',
+          is_active: true
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('❌ Error creating restaurant:', error);
+        throw error;
+      }
+
+      console.log('✅ Default restaurant created:', restaurant.name);
+      return restaurant;
+    } catch (error) {
+      console.error('❌ Error in createDefaultRestaurant:', error);
+      throw error;
+    }
+  };
+
+  const createDefaultLoyaltyTiers = async (restaurantId: string) => {
+    try {
+      console.log('🏆 Creating default loyalty tiers for restaurant:', restaurantId);
+      
+      const defaultTiers = [
+        {
+          restaurant_id: restaurantId,
+          tier: 'bronze',
+          name: 'Bronze',
+          min_points: 0,
+          benefits: ['Earn 1 point per $1 spent', 'Birthday bonus'],
+          color: '#CD7F32'
+        },
+        {
+          restaurant_id: restaurantId,
+          tier: 'silver',
+          name: 'Silver',
+          min_points: 500,
+          benefits: ['Earn 1.5 points per $1 spent', 'Birthday bonus', '5% discount'],
+          color: '#C0C0C0'
+        },
+        {
+          restaurant_id: restaurantId,
+          tier: 'gold',
+          name: 'Gold',
+          min_points: 1000,
+          benefits: ['Earn 2 points per $1 spent', 'Birthday bonus', '10% discount', 'Priority seating'],
+          color: '#FFD700'
+        }
+      ];
+
+      const { error } = await supabase
+        .from('loyalty_tiers')
+        .insert(defaultTiers);
+
+      if (error) {
+        console.error('❌ Error creating loyalty tiers:', error);
+        throw error;
+      }
+
+      console.log('✅ Default loyalty tiers created');
+    } catch (error) {
+      console.error('❌ Error in createDefaultLoyaltyTiers:', error);
+      // Don't throw - this is not critical for basic functionality
+    }
+  };
+
+  const createDefaultRewards = async (restaurantId: string) => {
+    try {
+      console.log('🎁 Creating default rewards for restaurant:', restaurantId);
+      
+      const defaultRewards = [
+        {
+          restaurant_id: restaurantId,
+          name: 'Free Appetizer',
+          description: 'Get a free appetizer of your choice',
+          points_required: 100,
+          category: 'food',
+          min_tier: 'bronze',
+          is_active: true
+        },
+        {
+          restaurant_id: restaurantId,
+          name: '10% Off Meal',
+          description: '10% discount on your entire meal',
+          points_required: 200,
+          category: 'discount',
+          min_tier: 'bronze',
+          is_active: true
+        },
+        {
+          restaurant_id: restaurantId,
+          name: 'Free Dessert',
+          description: 'Complimentary dessert with any entree',
+          points_required: 150,
+          category: 'food',
+          min_tier: 'silver',
+          is_active: true
+        },
+        {
+          restaurant_id: restaurantId,
+          name: 'Free Main Course',
+          description: 'Free main course (up to $25 value)',
+          points_required: 500,
+          category: 'food',
+          min_tier: 'gold',
+          is_active: true
+        }
+      ];
+
+      const { error } = await supabase
+        .from('rewards')
+        .insert(defaultRewards);
+
+      if (error) {
+        console.error('❌ Error creating rewards:', error);
+        throw error;
+      }
+
+      console.log('✅ Default rewards created');
+    } catch (error) {
+      console.error('❌ Error in createDefaultRewards:', error);
+      // Don't throw - this is not critical for basic functionality
+    }
+  };
+
   const fetchStaffData = async (user: User) => {
     try {
       console.log('👤 Fetching staff data for:', user.email);
@@ -205,11 +346,75 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // No staff record exists - this user is not authorized
-      console.log('❌ No staff record found for user - unauthorized access');
-      setStaff(null);
-      setUser(null);
-      await supabase.auth.signOut();
+      // No staff record exists - create one automatically
+      console.log('🆕 No staff record found - creating default setup...');
+      
+      if (!user.email) {
+        console.error('❌ User has no email - cannot create staff record');
+        setStaff(null);
+        setUser(null);
+        await supabase.auth.signOut();
+        return;
+      }
+
+      // First, check if there's an existing restaurant we can use
+      const { data: existingRestaurants } = await supabase
+        .from('restaurants')
+        .select('*')
+        .eq('is_active', true)
+        .limit(1);
+
+      let restaurant;
+      if (existingRestaurants && existingRestaurants.length > 0) {
+        restaurant = existingRestaurants[0];
+        console.log('✅ Using existing restaurant:', restaurant.name);
+      } else {
+        // Create a new restaurant
+        restaurant = await createDefaultRestaurant(user.email);
+        
+        // Create default loyalty tiers and rewards
+        await createDefaultLoyaltyTiers(restaurant.id);
+        await createDefaultRewards(restaurant.id);
+      }
+
+      // Extract name from email or use defaults
+      const emailPrefix = user.email.split('@')[0];
+      const nameParts = emailPrefix.split(/[._-]/);
+      const firstName = nameParts[0] ? 
+        nameParts[0].charAt(0).toUpperCase() + nameParts[0].slice(1) : 
+        'Restaurant';
+      const lastName = nameParts[1] ? 
+        nameParts[1].charAt(0).toUpperCase() + nameParts[1].slice(1) : 
+        'Manager';
+
+      // Create staff record
+      const { data: newStaff, error: staffError } = await supabase
+        .from('staff')
+        .insert({
+          restaurant_id: restaurant.id,
+          user_id: user.id,
+          email: user.email,
+          first_name: firstName,
+          last_name: lastName,
+          role: 'admin', // Make them admin by default
+          permissions: ['all'], // Give full permissions
+          is_active: true,
+          last_login: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (staffError) {
+        console.error('❌ Error creating staff record:', staffError);
+        setStaff(null);
+        setUser(null);
+        await supabase.auth.signOut();
+        return;
+      }
+
+      console.log('✅ Staff record created successfully:', newStaff.first_name, newStaff.last_name, newStaff.role);
+      setStaff(newStaff);
+
     } catch (error) {
       console.error('❌ Error in fetchStaffData:', error);
       setStaff(null);

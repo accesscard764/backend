@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DashboardService } from '../services/dashboardService';
+import { useAuth } from '../contexts/AuthContext';
 
 export interface DashboardStats {
   name: string;
@@ -54,6 +55,7 @@ export interface UserData {
 }
 
 export const useDashboardData = (timeRange: string = '7d') => {
+  const { user, staff, loading: authLoading } = useAuth();
   const [stats, setStats] = useState<DashboardStats[]>([]);
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
   const [customerData, setCustomerData] = useState<CustomerGrowthData[]>([]);
@@ -65,6 +67,13 @@ export const useDashboardData = (timeRange: string = '7d') => {
   const [error, setError] = useState<string | null>(null);
 
   const fetchDashboardData = async () => {
+    // Don't fetch data if user is not authenticated or staff record is not available
+    if (!user || !staff || authLoading) {
+      console.log('⏸️ Skipping dashboard data fetch - user not ready');
+      setLoading(false);
+      return;
+    }
+
     try {
       console.log('🚀 Starting dashboard data fetch...');
       setLoading(true);
@@ -113,13 +122,20 @@ export const useDashboardData = (timeRange: string = '7d') => {
   };
 
   useEffect(() => {
-    fetchDashboardData();
-    // Removed auto-refresh - data will only refresh on manual trigger or timeRange change
-  }, [timeRange]);
+    // Only fetch data when user and staff are available
+    if (user && staff && !authLoading) {
+      fetchDashboardData();
+    } else if (!authLoading) {
+      // If auth is done loading but no user/staff, clear loading state
+      setLoading(false);
+    }
+  }, [timeRange, user, staff, authLoading]);
 
   const refreshData = () => {
-    console.log('🔄 Manual refresh triggered');
-    fetchDashboardData();
+    if (user && staff) {
+      console.log('🔄 Manual refresh triggered');
+      fetchDashboardData();
+    }
   };
 
   return {
@@ -130,7 +146,7 @@ export const useDashboardData = (timeRange: string = '7d') => {
     weeklyActivity,
     notifications,
     currentUser,
-    loading,
+    loading: loading || authLoading,
     error,
     refreshData
   };
